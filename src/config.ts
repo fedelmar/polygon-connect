@@ -2,7 +2,7 @@
 module.exports = {
   rpc: {
     pos: {
-      parent: 'https://goerli.gateway.tenderly.co',
+      parent: 'https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161',
       child: 'https://rpc-mumbai.maticvigil.com',
     },
   },

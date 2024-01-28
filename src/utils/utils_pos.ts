@@ -2,7 +2,7 @@ import HDWalletProvider from '@truffle/hdwallet-provider'
 import bn from 'bn.js'
 import { POSClient, setProofApi, use } from '@maticnetwork/maticjs'
 import { Web3ClientPlugin } from '@maticnetwork/maticjs-web3'
-const config = require('./config')
+const config = require('../config')
 const SCALING_FACTOR = new bn(10).pow(new bn(18))
 
 use(Web3ClientPlugin)
@@ -23,7 +23,7 @@ const getPOSClient = () => {
       parent: {
         provider: new HDWalletProvider(
           [adminKey],
-          'https://goerli.gateway.tenderly.co',
+          config.rpc.pos.parent,
         ),
         defaultConfig: {
           from: adminAddress,
@@ -32,7 +32,7 @@ const getPOSClient = () => {
       child: {
         provider: new HDWalletProvider(
           [adminKey],
-          'https://rpc-mumbai.maticvigil.com',
+          config.rpc.pos.child,
         ),
         defaultConfig: {
           from: adminAddress,

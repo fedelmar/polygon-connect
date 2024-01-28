@@ -9,8 +9,8 @@ import { Button } from '../components/ui/button'
 import Web3, { Web3BaseWalletAccount } from 'web3'
 import { POSClient, use } from '@maticnetwork/maticjs'
 import { Web3ClientPlugin } from '@maticnetwork/maticjs-web3'
-import { getPOSClient, adminAddress } from '../utils_pos'
-const config = require('../config')
+import { getPOSClient, adminAddress } from '../utils/utils_pos'
+import { getERC155Balance, transferERC1155 } from '@/utils/erc1155methods'
 
 // install web3 plugin
 use(Web3ClientPlugin)
@@ -32,8 +32,13 @@ const mumbaiNetwork = {
 const Home = () => {
   const [chainId, setChainId] = useState<string>('')
   const [accounts, setAccounts] = useState<string[]>([])
+  const [adminBalance, setAdminBalance] = useState<string>('')
   const [accountsCreated, setAccountCreated] = useState<
     Web3BaseWalletAccount[]
+  >([])
+  const [loadingTx, setLoadingTx] = useState<boolean>(false)
+  const [balances, setBalances] = useState<
+    { address: string; balance: string }[]
   >([])
   const [loading, setLoading] = useState<boolean>(true)
   const [client, setClient] = useState<POSClient>()
@@ -84,6 +89,11 @@ const Home = () => {
       console.log('Chain Id: ', `0x${Number(chainId).toString(16)}`)
       setChainId(`0x${Number(chainId).toString(16)}`)
 
+      const balance = await web3.eth.getBalance(adminAddress)
+      // Convertir el saldo de wei a Matic
+      const balanceMatic = web3.utils.fromWei(balance, 'ether')
+      setAdminBalance(balanceMatic.toString())
+
       const posClient = await getPOSClient()
 
       if (posClient) setClient(posClient)
@@ -93,6 +103,34 @@ const Home = () => {
     connect()
     setLoading(false)
   }, [])
+
+  useEffect(() => {
+    const getBalances = async () => {
+      if (accountsCreated.length > 0) {
+        const web3 = new Web3(window.ethereum)
+        const updatedBalances = [...balances]
+
+        for (const account of accountsCreated) {
+          const balance = await web3.eth.getBalance(account.address)
+          const balanceMatic = web3.utils.fromWei(balance, 'ether')
+          const existingIndex = updatedBalances.findIndex(
+            (item) => item.address === account.address,
+          )
+
+          if (existingIndex !== -1) {
+            updatedBalances[existingIndex].balance = balanceMatic.toString()
+          } else {
+            updatedBalances.push({
+              address: account.address,
+              balance: balanceMatic.toString(),
+            })
+          }
+        }
+        setBalances(updatedBalances)
+      }
+    }
+    getBalances()
+  }, [loadingTx, accountsCreated])
 
   if (loading)
     return (
@@ -128,20 +166,38 @@ const Home = () => {
     }
   }
 
+  const sendMaticToAccount = async (
+    web3: Web3,
+    account: Web3BaseWalletAccount,
+  ) => {
+    setLoadingTx(true)
+    const transferTxHash = await web3.eth.sendTransaction({
+      from: adminAddress,
+      to: account.address,
+      value: web3.utils.toWei('0.01', 'ether'),
+    })
+    console.log('Transferencia exitosa. TxHash: ', transferTxHash)
+    setLoadingTx(false)
+  }
+
   const createNewAccount = async () => {
     if (typeof window !== 'undefined') {
       if (window.ethereum) {
-        setLoading(true)
         const web3 = new Web3(window.ethereum)
 
         try {
+          // Crear nueva cuenta
           const newAccount = await web3.eth.accounts.wallet.create(1)
-          setAccountCreated([...accountsCreated, newAccount[0]])
-          console.log('NewAccount: ', newAccount)
+          const createdAccount = newAccount[0]
+
+          // Agregar la nueva cuenta a la lista
+          setAccountCreated([...accountsCreated, createdAccount])
+          console.log('NewAccount: ', createdAccount)
+
+          await sendMaticToAccount(web3, newAccount[0])
         } catch (error) {
           console.error(error)
         }
-        setLoading(false)
       } else {
         console.error(
           'Web3 no detectado. Asegúrate de que MetaMask esté instalado.',
@@ -150,37 +206,7 @@ const Home = () => {
     }
   }
 
-  const deposit = async () => {
-    if (client && adminAddress) {
-      const erc1155Token = client.erc1155(config.pos.parent.erc1155, true)
-      const from = adminAddress
-      const result = await erc1155Token.deposit(
-        {
-          amount: 1,
-          tokenId: '123',
-          userAddress: from,
-        },
-        {
-          from,
-          gasLimit: 450000,
-          maxPriorityFeePerGas: 6000000000,
-        },
-      )
-
-      const txHash = await result.getTransactionHash()
-      console.log('TxHash: ', txHash)
-      const txReceipt = await result.getReceipt()
-      console.log('txReceipt: ', txReceipt)
-    }
-  }
-
-  const getBalance = async () => {
-    if (client && adminAddress) {
-      const erc1155Token = client.erc1155(config.pos.child.erc1155)
-      const balance = await erc1155Token.getBalance(adminAddress, '123')
-      console.log(balance)
-    }
-  }
+  console.log('balances: ', balances)
 
   return (
     <div className='flex min-h-screen flex-col items-center p-24'>
@@ -197,6 +223,7 @@ const Home = () => {
                 return <div key={account}>{account}</div>
               })}
             </div>
+            <p>Admin Balance: {adminBalance} </p>
             <div className='m-2'>
               {chainId !== mumbaiNetwork.chainId && (
                 <p className='text-red-600 font-bold mt-2'>
@@ -204,38 +231,55 @@ const Home = () => {
                 </p>
               )}
             </div>
+            {accountsCreated.length > 0 && (
+              <div className='flex flex-col'>
+                <p>Accounts created: </p>
+                <div className='flex flex-col'>
+                  {accountsCreated.map((account: Web3BaseWalletAccount) => {
+                    return (
+                      <div key={account.address}>
+                        {account.address} Balance:{' '}
+                        {
+                          balances.find((b) => b.address === account.address)
+                            ?.balance
+                        }
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {accountsCreated.length < 10 && (
+              <div className='mt-2 items-center'>
+                <Button onClick={() => createNewAccount()}>
+                  Create new Account
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
-        {accountsCreated.length > 0 && (
-          <div className='flex flex-col'>
-            <p>Accounts created: </p>
-            <div className='flex flex-col'>
-              {accountsCreated.map((account: Web3BaseWalletAccount) => {
-                return <div key={account.address}>{account.address}</div>
-              })}
-            </div>
-          </div>
-        )}
-        {accountsCreated.length < 2 && (
-          <div className='mt-2 items-center'>
-            <Button onClick={() => createNewAccount()}>
-              Create new Account
-            </Button>
-          </div>
-        )}
-
-        {client && (
+        {/*  {client && (
           <div>
-            <div className='mt-2 items-center'>
-              <Button onClick={() => deposit()}>Deposit</Button>
-            </div>
+            {
+              <div className='mt-2 items-center'>
+                <p>Transfer from adminAccount to first new account</p>
+                <Button
+                  onClick={() => transferERC1155(client, accountsCreated)}
+                >
+                  Transfer
+                </Button>
+              </div>
+            }
 
             <div className='mt-2 items-center'>
-              <Button onClick={() => getBalance()}>Get balance</Button>
+              <Button onClick={() => getERC155Balance(client, accountsCreated)}>
+                Get balance
+              </Button>
             </div>
           </div>
-        )}
+        )} */}
       </div>
     </div>
   )
