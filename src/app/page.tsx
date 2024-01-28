@@ -89,7 +89,7 @@ const Home = () => {
       console.log('Chain Id: ', `0x${Number(chainId).toString(16)}`)
       setChainId(`0x${Number(chainId).toString(16)}`)
 
-      const balance = await web3.eth.getBalance(adminAddress)
+      const balance = await web3.eth.getBalance(accounts[0])
       // Convertir el saldo de wei a Matic
       const balanceMatic = web3.utils.fromWei(balance, 'ether')
       setAdminBalance(balanceMatic.toString())
@@ -172,7 +172,7 @@ const Home = () => {
   ) => {
     setLoadingTx(true)
     const transferTxHash = await web3.eth.sendTransaction({
-      from: adminAddress,
+      from: accounts[0],
       to: account.address,
       value: web3.utils.toWei('0.01', 'ether'),
     })
