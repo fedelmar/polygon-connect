@@ -89,10 +89,12 @@ const Home = () => {
       console.log('Chain Id: ', `0x${Number(chainId).toString(16)}`)
       setChainId(`0x${Number(chainId).toString(16)}`)
 
-      const balance = await web3.eth.getBalance(accounts[0])
-      // Convertir el saldo de wei a Matic
-      const balanceMatic = web3.utils.fromWei(balance, 'ether')
-      setAdminBalance(balanceMatic.toString())
+      if (accounts.length > 0) {
+        const balance = await web3.eth.getBalance(accounts[0])
+        // Convertir el saldo de wei a Matic
+        const balanceMatic = web3.utils.fromWei(balance, 'ether')
+        setAdminBalance(balanceMatic.toString())
+      }
 
       const posClient = await getPOSClient()
 
@@ -127,8 +129,13 @@ const Home = () => {
           }
         }
         setBalances(updatedBalances)
+
+        const aBalance = await web3.eth.getBalance(accounts[0])
+        const aBalanceMatic = web3.utils.fromWei(aBalance, 'ether')
+        setAdminBalance(aBalanceMatic)
       }
     }
+
     getBalances()
   }, [loadingTx, accountsCreated])
 
@@ -150,6 +157,11 @@ const Home = () => {
             method: 'eth_requestAccounts',
           })
           setAccounts(accounts)
+
+          const balance = await web3.eth.getBalance(accounts[0])
+          // Convertir el saldo de wei a Matic
+          const balanceMatic = web3.utils.fromWei(balance, 'ether')
+          setAdminBalance(balanceMatic.toString())
 
           const chainId = await web3.eth.getChainId()
           console.log('Chain Id: ', `0x${Number(chainId).toString(16)}`)
@@ -205,8 +217,6 @@ const Home = () => {
       }
     }
   }
-
-  console.log('balances: ', balances)
 
   return (
     <div className='flex min-h-screen flex-col items-center p-24'>
