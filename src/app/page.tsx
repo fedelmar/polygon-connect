@@ -4,10 +4,16 @@ declare global {
     ethereum?: any
   }
 }
-
 import { useEffect, useState } from 'react'
 import { Button } from '../components/ui/button'
 import Web3, { Web3BaseWalletAccount } from 'web3'
+import { POSClient, use } from '@maticnetwork/maticjs'
+import { Web3ClientPlugin } from '@maticnetwork/maticjs-web3'
+import { getPOSClient, adminAddress } from '../utils_pos'
+const config = require('../config')
+
+// install web3 plugin
+use(Web3ClientPlugin)
 
 const mumbaiNetwork = {
   chainId: '0x13881',
@@ -24,13 +30,13 @@ const mumbaiNetwork = {
 }
 
 const Home = () => {
-  const [userAddress, setUserAddres] = useState<string>('')
   const [chainId, setChainId] = useState<string>('')
   const [accounts, setAccounts] = useState<string[]>([])
   const [accountsCreated, setAccountCreated] = useState<
     Web3BaseWalletAccount[]
   >([])
   const [loading, setLoading] = useState<boolean>(true)
+  const [client, setClient] = useState<POSClient>()
 
   const switchToMumbaiNetwork = async () => {
     try {
@@ -77,6 +83,10 @@ const Home = () => {
       const chainId = await web3.eth.getChainId()
       console.log('Chain Id: ', `0x${Number(chainId).toString(16)}`)
       setChainId(`0x${Number(chainId).toString(16)}`)
+
+      const posClient = await getPOSClient()
+
+      if (posClient) setClient(posClient)
     }
 
     setLoading(true)
@@ -102,10 +112,6 @@ const Home = () => {
             method: 'eth_requestAccounts',
           })
           setAccounts(accounts)
-
-          const userAddress = accounts[0]
-          setUserAddres(userAddress)
-          console.log('Dirección del usuario:', userAddress)
 
           const chainId = await web3.eth.getChainId()
           console.log('Chain Id: ', `0x${Number(chainId).toString(16)}`)
@@ -144,7 +150,37 @@ const Home = () => {
     }
   }
 
-  // console.log('Accounts created', accountsCreated)
+  const deposit = async () => {
+    if (client && adminAddress) {
+      const erc1155Token = client.erc1155(config.pos.parent.erc1155, true)
+      const from = adminAddress
+      const result = await erc1155Token.deposit(
+        {
+          amount: 1,
+          tokenId: '123',
+          userAddress: from,
+        },
+        {
+          from,
+          gasLimit: 450000,
+          maxPriorityFeePerGas: 6000000000,
+        },
+      )
+
+      const txHash = await result.getTransactionHash()
+      console.log('TxHash: ', txHash)
+      const txReceipt = await result.getReceipt()
+      console.log('txReceipt: ', txReceipt)
+    }
+  }
+
+  const getBalance = async () => {
+    if (client && adminAddress) {
+      const erc1155Token = client.erc1155(config.pos.child.erc1155)
+      const balance = await erc1155Token.getBalance(adminAddress, '123')
+      console.log(balance)
+    }
+  }
 
   return (
     <div className='flex min-h-screen flex-col items-center p-24'>
@@ -181,9 +217,25 @@ const Home = () => {
             </div>
           </div>
         )}
-        <div className='mt-2 items-center'>
-          <Button onClick={() => createNewAccount()}>Create new Account</Button>
-        </div>
+        {accountsCreated.length < 2 && (
+          <div className='mt-2 items-center'>
+            <Button onClick={() => createNewAccount()}>
+              Create new Account
+            </Button>
+          </div>
+        )}
+
+        {client && (
+          <div>
+            <div className='mt-2 items-center'>
+              <Button onClick={() => deposit()}>Deposit</Button>
+            </div>
+
+            <div className='mt-2 items-center'>
+              <Button onClick={() => getBalance()}>Get balance</Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
