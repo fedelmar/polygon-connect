@@ -27,7 +27,9 @@ const Home = () => {
   const [userAddress, setUserAddres] = useState<string>('')
   const [chainId, setChainId] = useState<string>('')
   const [accounts, setAccounts] = useState<string[]>([])
-  const [accountsCreated, setAccountCreated] = useState<any[]>([])
+  const [accountsCreated, setAccountCreated] = useState<
+    Web3BaseWalletAccount[]
+  >([])
   const [loading, setLoading] = useState<boolean>(true)
 
   const switchToMumbaiNetwork = async () => {
@@ -49,10 +51,14 @@ const Home = () => {
   }
 
   useEffect(() => {
-    window.ethereum.on('chainChanged', networkChanged)
+    if (typeof window !== 'undefined') {
+      if (window.ethereum) {
+        window.ethereum.on('chainChanged', networkChanged)
 
-    return () => {
-      window.ethereum.removeListener('chainChanged', networkChanged)
+        return () => {
+          window.ethereum.removeListener('chainChanged', networkChanged)
+        }
+      }
     }
   }, [])
 
@@ -144,8 +150,8 @@ const Home = () => {
     <div className='flex min-h-screen flex-col items-center p-24'>
       <div className='flex flex-col items-center p-6 w-auto h-auto bg-gray-300 rounded-lg shadow-lg justify-between'>
         {accounts.length === 0 ? (
-          <Button className='w-[120px]' onClick={() => connectWallet()}>
-            Connet Wallet
+          <Button className='w-auto' onClick={() => connectWallet()}>
+            Connect Wallet to Metamask
           </Button>
         ) : (
           <div className='flex flex-col'>
@@ -169,8 +175,8 @@ const Home = () => {
           <div className='flex flex-col'>
             <p>Accounts created: </p>
             <div className='flex flex-col'>
-              {accountsCreated.map((account: any, index: number) => {
-                return <div key={index}>{account.address}</div>
+              {accountsCreated.map((account: Web3BaseWalletAccount) => {
+                return <div key={account.address}>{account.address}</div>
               })}
             </div>
           </div>
