@@ -6,14 +6,12 @@ declare global {
 }
 import { useEffect, useState } from 'react'
 import { Button } from '../components/ui/button'
-import Web3, { Web3BaseWalletAccount } from 'web3'
-import { POSClient, use } from '@maticnetwork/maticjs'
-import { Web3ClientPlugin } from '@maticnetwork/maticjs-web3'
-import { getPOSClient, adminAddress } from '../utils/utils_pos'
-import { getERC155Balance, transferERC1155 } from '@/utils/erc1155methods'
+import Web3, { Contract, Web3BaseWalletAccount } from 'web3'
+import { abi, contractAddress } from '@/constants'
 
-// install web3 plugin
-use(Web3ClientPlugin)
+const adminAddress = process.env.NEXT_PUBLIC_ACCOUNT_ADDRESS
+const privateKey = process.env.NEXT_PUBLIC_PRIVATE_KEY
+const mumbaiInfuraProvider = process.env.NEXT_PUBLIC_POLYGON_MUMBAI_URL
 
 const mumbaiNetwork = {
   chainId: '0x13881',
@@ -41,7 +39,8 @@ const Home = () => {
     { address: string; balance: string }[]
   >([])
   const [loading, setLoading] = useState<boolean>(true)
-  const [client, setClient] = useState<POSClient>()
+  const [web3Instance, setWeb3] = useState<Web3>()
+  const [contract, setContract] = useState<Contract<any>>()
 
   const switchToMumbaiNetwork = async () => {
     try {
@@ -57,9 +56,24 @@ const Home = () => {
   }
 
   const networkChanged = (chainId: string) => {
-    console.log('Network changed: ', { chainId })
     setChainId(chainId)
   }
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && mumbaiInfuraProvider) {
+      if (window.ethereum) {
+        const web3 = new Web3(
+          new Web3.providers.HttpProvider(mumbaiInfuraProvider),
+        )
+
+        setWeb3(web3)
+
+        const contract = new web3.eth.Contract(abi, contractAddress)
+        setContract(contract)
+      }
+    }
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -86,7 +100,6 @@ const Home = () => {
       setAccounts(accounts)
 
       const chainId = await web3.eth.getChainId()
-      console.log('Chain Id: ', `0x${Number(chainId).toString(16)}`)
       setChainId(`0x${Number(chainId).toString(16)}`)
 
       if (accounts.length > 0) {
@@ -95,10 +108,6 @@ const Home = () => {
         const balanceMatic = web3.utils.fromWei(balance, 'ether')
         setAdminBalance(balanceMatic.toString())
       }
-
-      const posClient = await getPOSClient()
-
-      if (posClient) setClient(posClient)
     }
 
     setLoading(true)
@@ -178,43 +187,76 @@ const Home = () => {
     }
   }
 
-  const sendMaticToAccount = async (
-    web3: Web3,
-    account: Web3BaseWalletAccount,
-  ) => {
-    setLoadingTx(true)
-    const transferTxHash = await web3.eth.sendTransaction({
-      from: accounts[0],
-      to: account.address,
-      value: web3.utils.toWei('0.01', 'ether'),
-    })
-    console.log('Transferencia exitosa. TxHash: ', transferTxHash)
-    setLoadingTx(false)
-  }
-
-  const createNewAccount = async () => {
-    if (typeof window !== 'undefined') {
-      if (window.ethereum) {
-        const web3 = new Web3(window.ethereum)
-
-        try {
-          // Crear nueva cuenta
-          const newAccount = await web3.eth.accounts.wallet.create(1)
-          const createdAccount = newAccount[0]
-
-          // Agregar la nueva cuenta a la lista
-          setAccountCreated([...accountsCreated, createdAccount])
-          console.log('NewAccount: ', createdAccount)
-
-          await sendMaticToAccount(web3, newAccount[0])
-        } catch (error) {
-          console.error(error)
-        }
-      } else {
-        console.error(
-          'Web3 no detectado. Asegúrate de que MetaMask esté instalado.',
+  const getContract = async () => {
+    if (contract && web3Instance && privateKey) {
+      try {
+        const newAccount = await web3Instance.eth.accounts.create()
+        console.log('Cuenta creada: ', newAccount.address)
+        const transferAmount = web3Instance.utils.toWei('0.01', 'ether')
+        const gasPrice = await web3Instance.eth.getGasPrice()
+        const currentNonce = await web3Instance.eth.getTransactionCount(
+          adminAddress!,
         )
+        const tx = await web3Instance.eth.accounts.signTransaction(
+          {
+            from: adminAddress,
+            to: newAccount.address,
+            value: transferAmount,
+            gas: 21000,
+            gasPrice: gasPrice,
+            nonce: currentNonce,
+          },
+          privateKey,
+        )
+
+        console.log('Tx enviada')
+        const transactionReceipt = await web3Instance.eth.sendSignedTransaction(
+          tx.rawTransaction,
+        )
+
+        console.log(
+          'Transferencia exitosa. Hash de transacción:',
+          transactionReceipt.transactionHash,
+        )
+
+        const data = contract.methods
+          .setApprovalForAll(adminAddress, true)
+          .encodeABI()
+        const gasLimit = await contract.methods
+          .setApprovalForAll(adminAddress, true)
+          .estimateGas({ from: newAccount.address })
+
+        const txObject = {
+          from: newAccount.address,
+          to: contract.options.address,
+          gas: gasLimit,
+          gasPrice: gasPrice,
+          data: data,
+        }
+
+        const signedTx = await web3Instance.eth.accounts.signTransaction(
+          txObject,
+          newAccount.privateKey,
+        )
+
+        const txReceipt = await web3Instance.eth.sendSignedTransaction(
+          signedTx.rawTransaction,
+        )
+        console.log(
+          'Llamada a setApprovedForAll exitosa. Hash de transacción:',
+          txReceipt.transactionHash,
+        )
+
+        const isApprovedForAll = await contract.methods
+          .isApprovedForAll(newAccount.address, adminAddress)
+          .call()
+
+        console.log(isApprovedForAll && 'Is approved for all!')
+      } catch (error) {
+        console.log(error)
       }
+    } else {
+      console.log('missing something')
     }
   }
 
@@ -260,36 +302,21 @@ const Home = () => {
               </div>
             )}
 
-            {accountsCreated.length < 10 && (
+            {/* {accountsCreated.length < 10 && (
               <div className='mt-2 items-center'>
                 <Button onClick={() => createNewAccount()}>
                   Create new Account
                 </Button>
               </div>
-            )}
+            )} */}
           </div>
         )}
 
-        {/*  {client && (
-          <div>
-            {
-              <div className='mt-2 items-center'>
-                <p>Transfer from adminAccount to first new account</p>
-                <Button
-                  onClick={() => transferERC1155(client, accountsCreated)}
-                >
-                  Transfer
-                </Button>
-              </div>
-            }
-
-            <div className='mt-2 items-center'>
-              <Button onClick={() => getERC155Balance(client, accountsCreated)}>
-                Get balance
-              </Button>
-            </div>
+        {web3Instance && contract && (
+          <div className='mt-2 items-center'>
+            <Button onClick={() => getContract()}>Create account</Button>
           </div>
-        )} */}
+        )}
       </div>
     </div>
   )
