@@ -23,6 +23,7 @@ const Home = () => {
   const [error, setError] = useState<any>('')
   const [isApprovedForAll, setIsApprovedForAll] = useState<boolean>(false)
   const [gasPrice, setGasPrice] = useState<any>()
+  const [pendingTransactions, setPendingTransactions] = useState<any[]>([])
 
   useEffect(() => {
     if (typeof window !== 'undefined' && mumbaiInfuraProvider) {
@@ -56,6 +57,70 @@ const Home = () => {
       setApprovalForAll(accountCreated)
     }
   }, [accountCreated, accountBalance])
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      checkPendingTransactions()
+    }, 5000)
+    return () => clearInterval(intervalId)
+  }, [pendingTransactions])
+
+  const addToPendingTransactions = (transaction: any, type: string) => {
+    setPendingTransactions((prevTransactions) => [
+      ...prevTransactions,
+      { tx: transaction, type },
+    ])
+  }
+
+  const removeFromPendingTransactions = (hash: string) => {
+    setPendingTransactions((prevTransactions) =>
+      prevTransactions.filter((t) => t.tx.hash !== hash),
+    )
+  }
+
+  const checkPendingTransactions = async () => {
+    if (
+      pendingTransactions.length > 0 &&
+      web3Instance &&
+      accountCreated &&
+      contract
+    ) {
+      for (let i = 0; i < pendingTransactions.length; i++) {
+        const tx = pendingTransactions[i].tx
+
+        try {
+          const receipt = await web3Instance.eth.getTransactionReceipt(tx.hash)
+          if (receipt) {
+            removeFromPendingTransactions(tx.hash)
+            if (pendingTransactions[i].type === 'transfer') {
+              console.log(
+                'Transferencia exitosa. Hash de transacción:',
+                tx.hash,
+              )
+              const balance = await web3Instance.eth.getBalance(
+                accountCreated.address,
+              )
+              const balanceMatic = web3Instance.utils.fromWei(balance, 'ether')
+              setAccountBalance(balanceMatic)
+              setLoadingTx(false)
+            } else {
+              console.log(
+                'Llamada a setApprovedForAll exitosa. Hash de transacción:',
+                tx.hash,
+              )
+              const isApprovedForAll = await contract.methods
+                .isApprovedForAll(accountCreated.address, adminAddress)
+                .call()
+              console.log(isApprovedForAll && 'Is approved for all!')
+              isApprovedForAll && setIsApprovedForAll(true)
+            }
+          }
+        } catch (error) {
+          console.error(`Error checking transaction: ${tx.hash}`, error)
+        }
+      }
+    }
+  }
 
   if (loading)
     return (
@@ -91,20 +156,11 @@ const Home = () => {
           privateKey,
         )
         console.log('Tx enviada')
-        const transactionReceipt = await web3Instance.eth.sendSignedTransaction(
-          tx.rawTransaction,
-        )
-        console.log(
-          'Transferencia exitosa. Hash de transacción:',
-          transactionReceipt.transactionHash,
-        )
-        const balance = await web3Instance.eth.getBalance(account.address)
-        const balanceMatic = web3Instance.utils.fromWei(balance, 'ether')
-        setAccountBalance(balanceMatic)
+        addToPendingTransactions({ hash: tx.transactionHash }, 'transfer')
+        await web3Instance.eth.sendSignedTransaction(tx.rawTransaction)
       } catch (error) {
         setError(error)
       }
-      setLoadingTx(false)
     }
   }
 
@@ -128,18 +184,9 @@ const Home = () => {
           txObject,
           account.privateKey,
         )
-        const txReceipt = await web3Instance.eth.sendSignedTransaction(
-          signedTx.rawTransaction,
-        )
-        console.log(
-          'Llamada a setApprovedForAll exitosa. Hash de transacción:',
-          txReceipt.transactionHash,
-        )
-        const isApprovedForAll = await contract.methods
-          .isApprovedForAll(account.address, adminAddress)
-          .call()
-        console.log(isApprovedForAll && 'Is approved for all!')
-        isApprovedForAll && setIsApprovedForAll(true)
+        console.log('Tx setApprovalForAll enviada')
+        addToPendingTransactions({ hash: signedTx.transactionHash }, 'approval')
+        await web3Instance.eth.sendSignedTransaction(signedTx.rawTransaction)
       } catch (error) {
         setError(error)
       }
